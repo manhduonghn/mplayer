@@ -1,9 +1,3 @@
-const adsRegexList = [
-    /(?<!#EXT-X-DISCONTINUITY[\s\S]*)#EXT-X-DISCONTINUITY\n(?:.*?\n){18,24}#EXT-X-DISCONTINUITY\n(?![\s\S]*#EXT-X-DISCONTINUITY)/g,
-    /#EXT-X-DISCONTINUITY\n(?:#EXT-X-KEY:METHOD=NONE\n(?:.*\n){18,24})?#EXT-X-DISCONTINUITY\n|convertv7\//g,
-    /#EXT-X-DISCONTINUITY\n#EXTINF:3\.920000,\n.*\n#EXTINF:0\.760000,\n.*\n#EXTINF:2\.000000,\n.*\n#EXTINF:2\.500000,\n.*\n#EXTINF:2\.000000,\n.*\n#EXTINF:2\.420000,\n.*\n#EXTINF:2\.000000,\n.*\n#EXTINF:0\.780000,\n.*\n#EXTINF:1\.960000,\n.*\n#EXTINF:2\.000000,\n.*\n#EXTINF:1\.760000,\n.*\n#EXTINF:3\.200000,\n.*\n#EXTINF:2\.000000,\n.*\n#EXTINF:1\.360000,\n.*\n#EXTINF:2\.000000,\n.*\n#EXTINF:2\.000000,\n.*\n#EXTINF:0\.720000,\n.*/g
-];
-
 function getQueryParam(key) {
     const params = new URLSearchParams(window.location.search);
     return params.get(key);
@@ -32,33 +26,11 @@ if (!m3u8Url) {
 }
 
 if (Hls.isSupported()) {
-    class CustomLoader extends Hls.DefaultConfig.loader {
-        load(context, config, callbacks) {
-            const originalOnSuccess = callbacks.onSuccess;
-            const wrappedCallbacks = {
-                ...callbacks,
-                onSuccess: (response, stats, ctx, networkDetails) => {
-                    if (ctx.type === 'manifest' || ctx.type === 'level') {
-                        let text = response.data;
-                        adsRegexList.forEach(r => {
-                            text = text.replace(r, '');
-                        });
-                        response.data = text;
-                    }
-                    originalOnSuccess(response, stats, ctx, networkDetails);
-                }
-            };
-            super.load(context, config, wrappedCallbacks);
-        }
-    }
-
-    const hls = new Hls({
-        loader: CustomLoader,
-    });
+    const hls = new Hls();
     
     const art = new Artplayer({
         container: '#player',
-        url: '',
+        url: '', // The URL will be set dynamically
         type: 'm3u8',
         autoplay: true,
         screenshot: true,
@@ -70,8 +42,16 @@ if (Hls.isSupported()) {
         theme: '#ff4747',
         customType: {
             m3u8: (video, url) => {
-                hls.loadSource(url);
-                hls.attachMedia(video);
+                // Use the CDN function to fetch and process the manifest
+                window.fetchAndProcessPlaylist(url).then(processedUrl => {
+                    hls.loadSource(processedUrl);
+                    hls.attachMedia(video);
+                }).catch(error => {
+                    console.error("Failed to process manifest:", error);
+                    // Fallback to original URL if processing fails
+                    hls.loadSource(url);
+                    hls.attachMedia(video);
+                });
             }
         },
         controls: [
@@ -117,10 +97,9 @@ if (Hls.isSupported()) {
             }
         ]
     });
-
-    hls.attachMedia(art.video);
-    hls.loadSource(m3u8Url);
     
+    art.switchUrl(m3u8Url);
+
     setupResponsiveControls(art);
 
     art.on('destroy', () => { try { hls.destroy(); } catch {} });
